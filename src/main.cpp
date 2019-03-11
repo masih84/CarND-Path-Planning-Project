@@ -7,6 +7,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
@@ -49,8 +50,10 @@ int main() {
     map_waypoints_dx.push_back(d_x);
     map_waypoints_dy.push_back(d_y);
   }
+  int lane = 1;
+  double ref_vel = 0;//mph
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
+  h.onMessage([&lane, &ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
@@ -90,15 +93,172 @@ int main() {
 
           json msgJson;
 
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
+		  int prev_size = previous_path_x.size();
+
+		
+		  if (prev_size > 0) {
+
+			  car_s = end_path_s;
+		  }
+
+		  bool too_close = false;
+		  int k = 0;
+		  for (int i = 0; i < sensor_fusion.size(); i++) {
+
+			  float d = sensor_fusion[i][6];
+
+			  if ((d < (2 + 4 * lane + 0.5)) && (d > (2 + 4 * lane - 0.5))) {
+
+				  double vx = sensor_fusion[i][3];
+					  double vy = sensor_fusion[i][4];
+					  double check_speed = sqrt(vx*vx + vy * vy);
+					  double check_car_s = sensor_fusion[i][5];
+
+					  check_car_s += (double)prev_size*.02*check_speed;
+					  if ((check_car_s > car_s) && (check_car_s - car_s < 30)) {
+						  //ref_vel = check_speed * 2.24;
+							  k += 1;
+							 // std::cout << "There is car infront of you bitch!! " << std::endl;
+							  too_close = true;
+
+					  }
+			  }
+		  }
+
+		  if (too_close ) {
+			  ref_vel -= .224;
+		  }
+		  else if (ref_vel<49.5){
+			  ref_vel += .224;
+
+		  } 
+
+	
+			  
+		  vector<double> ptsx;
+		  vector<double> ptsy;
+
+		  double ref_x = car_x;
+		  double ref_y = car_y;
+		  double ref_yaw = deg2rad(car_yaw);
+
+		  if (prev_size < 2) {
+			  double prev_car_x = car_x - cos(ref_yaw);
+			  double prev_car_y = car_y - sin(ref_yaw);
+			  ptsx.push_back(prev_car_x);
+			  ptsy.push_back(prev_car_y);
+
+			  ptsx.push_back(car_x);
+			  ptsy.push_back(car_y);
+
+		  }
+		  else {
+			  ref_x = previous_path_x[prev_size - 1];
+			  ref_y = previous_path_y[prev_size - 1];
+			  
+			  double ref_x_prev = previous_path_x[prev_size - 2];
+			  double ref_y_prev = previous_path_y[prev_size - 2];
+
+			  ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+			  
+			  ptsx.push_back(ref_x_prev);
+			  ptsx.push_back(ref_x);
+
+			  ptsy.push_back(ref_y_prev);
+			  ptsy.push_back(ref_y);
+		  }
+	
+
+		  vector<double> next_wp0 = getXY(car_s + 30., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp1 = getXY(car_s + 60., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp2 = getXY(car_s + 90., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  
+		  ptsx.push_back(next_wp0[0]);
+		  ptsx.push_back(next_wp1[0]);
+		  ptsx.push_back(next_wp2[0]);
+
+		  ptsy.push_back(next_wp0[1]);
+		  ptsy.push_back(next_wp1[1]);
+		  ptsy.push_back(next_wp2[1]);
+
+		  for (int i = 0; i < ptsx.size(); i++) {
+
+			  double shift_x = ptsx[i] - ref_x;
+			  double shift_y = ptsy[i] - ref_y;
+
+			  ptsx[i] = shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw);
+		      ptsy[i] = shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw);
+		  }
+	
+
+		 // std::cout << "ptsx size is " << ptsx.size() << std::endl;
+		 // std::cout << "ptsy size is " << ptsy.size() << std::endl;
+
+
+		  tk::spline s;
+		  s.set_points(ptsx, ptsy);
+
+
 
           /**
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+		  vector<double> next_x_vals;
+		  vector<double> next_y_vals;
+
+		 // std::cout << "previous_path_x size is : " << previous_path_x.size() << std::endl;
+
+		  for (int i = 0; i < previous_path_x.size(); ++i) {
+			  next_x_vals.push_back(previous_path_x[i]);
+			  next_y_vals.push_back(previous_path_y[i]);
+		  }
+		 
+
+		  double target_x = 30.;
+		  double target_y = s(target_x);
+		  double target_dist = sqrt((target_x * target_x) + (target_y * target_y));
+
+		  double x_add_on = 0;
+		  double N = (target_dist / (0.02*ref_vel / 2.24));
+		  
+		//  std::cout << "current path size  is " << 50 - previous_path_x.size() << std::endl;
+
+		  for (int i = 1; i < 50 - previous_path_x.size(); i++) {
+
+			  double x_point = x_add_on + (target_x) / N;
+			  double y_point = s(x_point);
+			  x_add_on = x_point;
+
+			  double shift_x = x_point;
+			  double shift_y = y_point;
+
+			  x_point = (shift_x * cos(ref_yaw) - shift_y * sin(ref_yaw));
+			  y_point = (shift_x * sin(ref_yaw) + shift_y * cos(ref_yaw));
+
+			  x_point += ref_x;
+			  y_point += ref_y;
+
+			  next_x_vals.push_back(x_point);
+			  next_y_vals.push_back(y_point);
+		  }
+
+		  int sz = next_x_vals.size();
+		 // std::cout << "car next_x_vals size is :" << sz << std::endl;
 
 
+		  /*
+
+		  std::cout << "car xval is :" << car_x << std::endl;
+		  std::cout << "car yval is :" << car_y << std::endl;
+
+		  std::cout << "first xval is :" << next_x_vals[0] << std::endl;
+		  std::cout << "final yval is :" << next_y_vals[0] << std::endl;
+
+		  std::cout << "final xval is :" << next_x_vals[sz-1] << std::endl;
+		  std::cout << "final yval is :" << next_y_vals[sz-1] << std::endl;
+
+		  */
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
