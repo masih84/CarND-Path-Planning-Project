@@ -52,8 +52,10 @@ int main() {
   }
   int lane = 1;
   double ref_vel = 0;//mph
-
-  h.onMessage([&lane, &ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
+  bool changing_lane = false;
+  int next_lane = 1;
+  double traveled_in_lane = 0.;
+  h.onMessage([&lane, &ref_vel, &changing_lane, &next_lane, &traveled_in_lane, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
@@ -99,41 +101,204 @@ int main() {
 		  if (prev_size > 0) {
 
 			  car_s = end_path_s;
+			  car_d = end_path_d;
+		  }
+		  if ((next_lane != lane) && (car_d < (2 + 4 * next_lane + .2)) && (car_d > (2 + 4 * next_lane - .2)))
+		  {
+			  lane = next_lane;
+			  changing_lane = false;
+			  traveled_in_lane = 0;
+
 		  }
 
+		  // Keep the lane and adjust the speed
 		  bool too_close = false;
+		  double gap_left_lane_front_car = 30.;
+		  double gap_left_lane_rear_car = 30.;
+		  double gap_right_lane_front_car = 30.;
+		  double gap_right_lane_rear_car = 30.;
+		  double gap_my_lane_front_car = 30.;
+		  double left_lane_speed = 100.;
+		  double right_lane_speed = 100.;
+		  double left_lane_rear_speed = 0.;
+		  double right_lane_rear_speed = 0.;
+
+		  double my_lane_speed = 100.;
+
+
 		  int k = 0;
-		  for (int i = 0; i < sensor_fusion.size(); i++) {
+		  if (lane == 0) {
+			  gap_left_lane_front_car = 0.;
+			  gap_left_lane_rear_car = 0.;
+		  }
+
+		  if (lane == 2) {
+			  gap_right_lane_front_car =0.;
+			  gap_right_lane_rear_car = 0.;
+		  }
+
+		  traveled_in_lane += .02*car_speed;
+
+		  for (int i = 0; i < sensor_fusion.size(); i++) 
+		  {
 
 			  float d = sensor_fusion[i][6];
 
-			  if ((d < (2 + 4 * lane + 0.5)) && (d > (2 + 4 * lane - 0.5))) {
+			  double vx = sensor_fusion[i][3];
+			  double vy = sensor_fusion[i][4];
+			  double check_speed = sqrt(vx*vx + vy * vy);
+			  double check_car_s = sensor_fusion[i][5];
 
-				  double vx = sensor_fusion[i][3];
-					  double vy = sensor_fusion[i][4];
-					  double check_speed = sqrt(vx*vx + vy * vy);
-					  double check_car_s = sensor_fusion[i][5];
+			  // check this lane
 
 					  check_car_s += (double)prev_size*.02*check_speed;
-					  if ((check_car_s > car_s) && (check_car_s - car_s < 30)) {
-						  //ref_vel = check_speed * 2.24;
-							  k += 1;
-							 // std::cout << "There is car infront of you bitch!! " << std::endl;
-							  too_close = true;
+					  
+					  double gap = check_car_s - car_s;
+					  
+					  if (fabs(gap) < 30.)
+					  {
+						  // check my lane
+						//  if ((check_car_s > car_s) && (d < (2 + 4 * lane + 1)) && (d > (2 + 4 * lane - 1))) 
+						if ((check_car_s > car_s) && (d < (car_d + 1)) && (d > (car_d - 1)))
 
+						  {
+
+							  if (gap < gap_my_lane_front_car) 
+							  {
+								  gap_my_lane_front_car = gap;
+								  my_lane_speed = check_speed;
+							  }
+							  //ref_vel = check_speed * 2.24;
+							  k += 1;
+							  // std::cout << "There is car infront of you bitch!! " << std::endl;
+							  too_close = true;
+						  }
+
+						  if ((lane > 0) && (d < (2 + 4 * (lane - 1) + 1)) && (d > (2 + 4 * (lane - 1) - 1)))
+						  {
+
+							  if ((gap > 0) && (gap < gap_left_lane_front_car))
+							  {
+								  gap_left_lane_front_car = gap;
+								  left_lane_speed = check_speed;
+							  }
+
+							  if ((gap < 0) && ((-1.*gap) < gap_left_lane_rear_car))
+							  {
+								  gap_left_lane_rear_car = -1.*gap;
+								  left_lane_rear_speed = check_speed;
+							  }
+						  }
+
+						  if ((lane < 2) && (d < (2 + 4 * (lane + 1) + 1)) && (d > (2 + 4 * (lane + 1) - 1)))
+						  {
+
+							  if ((gap > 0) && (gap < gap_right_lane_front_car))
+							  {
+								  gap_right_lane_front_car = gap;
+								  right_lane_speed = check_speed;
+							  }
+
+							  if ((gap < 0) && ((-1.*gap) < gap_right_lane_rear_car))
+							  {
+								  gap_right_lane_rear_car = -1.*gap;
+								  right_lane_rear_speed = check_speed;
+							  }
+
+						  }
 					  }
-			  }
 		  }
+			
+		   
+
+		   bool right_lane_clear = false;
+		   bool left_lane_clear = false;
+		   bool go_left = false;
+		   bool go_right = false;
+
+
+		   double min_gap_right_lane = fmin(gap_right_lane_rear_car, gap_right_lane_front_car);
+		   double min_gap_left_lane = fmin(gap_left_lane_rear_car, gap_left_lane_front_car);
+
+		   
+		   double thershold_lane_change = 10.0;
+
+		   double time_change_lane = (4. / car_speed) + 2.;
+		   double time_rear_left_hit_me = gap_left_lane_rear_car / left_lane_rear_speed;
+		   double time_rear_right_hit_me = gap_right_lane_rear_car / right_lane_rear_speed;
 
 		  if (too_close ) {
-			  ref_vel -= .224;
+				  ref_vel -= .224;
+			  if ((changing_lane == false) && (ref_vel > 10.) && (traveled_in_lane> 250.))
+			  {
+				  if ((min_gap_right_lane > thershold_lane_change) && (time_rear_right_hit_me > time_change_lane)){
+					  right_lane_clear = true;
+				  }
+				  if ((min_gap_left_lane > thershold_lane_change) && (time_rear_left_hit_me > time_change_lane)) {
+					  left_lane_clear = true;
+				  }
+
+				  if (right_lane_clear && left_lane_clear) {
+
+					  if (min_gap_right_lane < min_gap_left_lane) {
+						  if (my_lane_speed < left_lane_speed) {
+							  go_left = true;
+						  }else if (my_lane_speed < right_lane_speed) {
+							  go_right = true;
+						  }
+					  }
+					  else {
+						  if (my_lane_speed < right_lane_speed) {
+							  go_right = true;
+						  }
+					  }
+
+				  }
+				  else {
+					  if (left_lane_clear) {
+						  if (my_lane_speed < left_lane_speed) {
+							  go_left = true;
+						  }
+					  }
+					  if (right_lane_clear) {
+						  if (my_lane_speed < right_lane_speed) {
+							  go_right = true;
+						  }
+					  }
+				  }
+				  if (go_left && (lane > 0)) {
+					  next_lane = lane - 1;
+					  changing_lane = true;
+
+				  }
+				  if (go_right && (lane < 2)) {
+					  next_lane = lane + 1;
+					  changing_lane = true;
+				  }
+			  }
+
+
 		  }
 		  else if (ref_vel<49.5){
 			  ref_vel += .224;
-
 		  } 
 
-	
+		  //std::cout << "min gap right  is " << min_gap_right_lane << std::endl;
+		  // std::cout << "min gap left is " << min_gap_left_lane << std::endl;
+		  if (go_right)
+		  {
+			  std::cout << "going right is clear. min gap right  is " << min_gap_right_lane << std::endl;
+			  std::cout << "traveled_in_lane  is " << traveled_in_lane << std::endl;
+
+		  }
+		  if (go_left)
+		  {
+			  std::cout << "going left is clear. min gap left is " << min_gap_left_lane << std::endl;
+			  std::cout << "traveled_in_lane  is " << traveled_in_lane << std::endl;
+
+		  }
+
+
 			  
 		  vector<double> ptsx;
 		  vector<double> ptsy;
@@ -169,9 +334,10 @@ int main() {
 		  }
 	
 
-		  vector<double> next_wp0 = getXY(car_s + 30., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-		  vector<double> next_wp1 = getXY(car_s + 60., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-		  vector<double> next_wp2 = getXY(car_s + 90., (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+	
+		  vector<double> next_wp0 = getXY(car_s + 30., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp1 = getXY(car_s + 60., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  vector<double> next_wp2 = getXY(car_s + 90., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 		  
 		  ptsx.push_back(next_wp0[0]);
 		  ptsx.push_back(next_wp1[0]);
