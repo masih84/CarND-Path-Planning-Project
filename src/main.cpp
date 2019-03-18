@@ -103,6 +103,7 @@ int main() {
 			  car_s = end_path_s;
 			  car_d = end_path_d;
 		  }
+		  // chack if the car finish the lane changing process.
 		  if ((next_lane != lane) && (car_d < (2 + 4 * next_lane + .2)) && (car_d > (2 + 4 * next_lane - .2)))
 		  {
 			  lane = next_lane;
@@ -111,13 +112,13 @@ int main() {
 
 		  }
 
-		  // Keep the lane and adjust the speed
+		  // Initilize the following condition
 		  bool too_close = false;
-		  double gap_left_lane_front_car = 30.;
-		  double gap_left_lane_rear_car = 30.;
-		  double gap_right_lane_front_car = 30.;
-		  double gap_right_lane_rear_car = 30.;
-		  double gap_my_lane_front_car = 30.;
+		  double distance2_left_lane_front_car = 200.;
+		  double distance2_left_lane_rear_car = 200.;
+		  double distance2_right_lane_front_car = 200.;
+		  double distance2_right_lane_rear_car = 200.;
+		  double distance2_my_lane_front_car = 200.;
 		  double left_lane_speed = 100.;
 		  double right_lane_speed = 100.;
 		  double left_lane_rear_speed = 0.;
@@ -128,15 +129,16 @@ int main() {
 
 		  int k = 0;
 		  if (lane == 0) {
-			  gap_left_lane_front_car = 0.;
-			  gap_left_lane_rear_car = 0.;
+			  distance2_left_lane_front_car = 0.;
+			  distance2_left_lane_rear_car = 0.;
 		  }
 
 		  if (lane == 2) {
-			  gap_right_lane_front_car =0.;
-			  gap_right_lane_rear_car = 0.;
+			  distance2_right_lane_front_car =0.;
+			  distance2_right_lane_rear_car = 0.;
 		  }
 
+		  // keeo track of distance car traveled  
 		  traveled_in_lane += .02*car_speed;
 
 		  for (int i = 0; i < sensor_fusion.size(); i++) 
@@ -155,53 +157,52 @@ int main() {
 					  
 					  double gap = check_car_s - car_s;
 					  
-					  if (fabs(gap) < 30.)
+					  if (fabs(gap) < 200.)
 					  {
-						  // check my lane
-						//  if ((check_car_s > car_s) && (d < (2 + 4 * lane + 1)) && (d > (2 + 4 * lane - 1))) 
-						if ((check_car_s > car_s) && (d < (car_d + 1)) && (d > (car_d - 1)))
+						 // check my lane and decide if car disatance to the next car is too close in this lane
+						if ((fabs(gap) < 40.) && (check_car_s > car_s) && (d < (car_d + 1.5)) && (d > (car_d - 1.5)))
 
 						  {
 
-							  if (gap < gap_my_lane_front_car) 
+							  if (gap < distance2_my_lane_front_car) 
 							  {
-								  gap_my_lane_front_car = gap;
+								  distance2_my_lane_front_car = gap;
 								  my_lane_speed = check_speed;
 							  }
-							  //ref_vel = check_speed * 2.24;
-							  k += 1;
-							  // std::cout << "There is car infront of you bitch!! " << std::endl;
 							  too_close = true;
 						  }
 
-						  if ((lane > 0) && (d < (2 + 4 * (lane - 1) + 1)) && (d > (2 + 4 * (lane - 1) - 1)))
+						// check left lane and find discante 2 closet front and rear cars in the left lane
+
+						  if ((lane > 0) && (d < (2 + 4 * (lane - 1) + 2)) && (d > (2 + 4 * (lane - 1) - 2)))
 						  {
 
-							  if ((gap > 0) && (gap < gap_left_lane_front_car))
+							  if ((gap > 0) && (gap < distance2_left_lane_front_car))
 							  {
-								  gap_left_lane_front_car = gap;
+								  distance2_left_lane_front_car = gap;
 								  left_lane_speed = check_speed;
 							  }
 
-							  if ((gap < 0) && ((-1.*gap) < gap_left_lane_rear_car))
+							  if ((gap < 0) && ((-1.*gap) < distance2_left_lane_rear_car))
 							  {
-								  gap_left_lane_rear_car = -1.*gap;
+								  distance2_left_lane_rear_car = -1.*gap;
 								  left_lane_rear_speed = check_speed;
 							  }
 						  }
+						  // check right lane and find discante 2 closet front and rear cars in the right lane
 
-						  if ((lane < 2) && (d < (2 + 4 * (lane + 1) + 1)) && (d > (2 + 4 * (lane + 1) - 1)))
+						  if ((lane < 2) && (d < (2 + 4 * (lane + 1) + 2)) && (d > (2 + 4 * (lane + 1) - 2)))
 						  {
 
-							  if ((gap > 0) && (gap < gap_right_lane_front_car))
+							  if ((gap > 0) && (gap < distance2_right_lane_front_car))
 							  {
-								  gap_right_lane_front_car = gap;
+								  distance2_right_lane_front_car = gap;
 								  right_lane_speed = check_speed;
 							  }
 
-							  if ((gap < 0) && ((-1.*gap) < gap_right_lane_rear_car))
+							  if ((gap < 0) && ((-1.*gap) < distance2_right_lane_rear_car))
 							  {
-								  gap_right_lane_rear_car = -1.*gap;
+								  distance2_right_lane_rear_car = -1.*gap;
 								  right_lane_rear_speed = check_speed;
 							  }
 
@@ -210,58 +211,103 @@ int main() {
 		  }
 			
 		   
-
+		  // initialize lane change logical conditions
 		   bool right_lane_clear = false;
 		   bool left_lane_clear = false;
 		   bool go_left = false;
 		   bool go_right = false;
+		   bool turn_left_speed_match = false;
+		   bool turn_right_speed_match = false;
 
+		   // find min distance to the cars in the left and right lanes
 
-		   double min_gap_right_lane = fmin(gap_right_lane_rear_car, gap_right_lane_front_car);
-		   double min_gap_left_lane = fmin(gap_left_lane_rear_car, gap_left_lane_front_car);
+		   double min_distance2_right_lane = fmin(distance2_right_lane_rear_car, distance2_right_lane_front_car);
+		   double min_distance2_left_lane = fmin(distance2_left_lane_rear_car, distance2_left_lane_front_car);
 
-		   
-		   double thershold_lane_change = 10.0;
+		   // set the  thershold gap to change the lane 
+		   double thershold_lane_change = 12.0;
 
-		   double time_change_lane = (4. / car_speed) + 2.;
-		   double time_rear_left_hit_me = gap_left_lane_rear_car / left_lane_rear_speed;
-		   double time_rear_right_hit_me = gap_right_lane_rear_car / right_lane_rear_speed;
+		   // calculte the time ego car needs to change lane 
 
+		   double time_change_lane = (4. / car_speed) + 1.5;
+
+		   // calculte the time rear left car needs to catch-up 
+
+		   double time_rear_left_hit_me = distance2_left_lane_rear_car / left_lane_rear_speed;
+
+		   // calculte the time rear right car needs to catch-up 
+
+		   double time_rear_right_hit_me = distance2_right_lane_rear_car / right_lane_rear_speed;
+
+		  
+		   // chack if speed matches to change lane to the left
+		   if (((my_lane_speed*.8 < left_lane_speed) && 
+			   (car_speed * .7 < left_lane_speed) && 
+			   (car_speed * 1.3 > left_lane_rear_speed)) ||
+			   (min_distance2_left_lane > 2.5* thershold_lane_change)) {
+			   turn_left_speed_match = true;
+		   }
+
+		   // chack if speed matches to change lane to the right
+		   if (((my_lane_speed *.8 < right_lane_speed) && 
+			   (car_speed *.7 < right_lane_speed) && 
+			   (car_speed * 1.3 > right_lane_rear_speed)) ||
+			   (min_distance2_right_lane > 2.5* thershold_lane_change)) {
+			   turn_right_speed_match = true;
+		   }
+
+		   // keep the lane and speed unless car is too closed to the next one
 		  if (too_close ) {
+			  if ((my_lane_speed * 1.3 < car_speed) || (distance2_my_lane_front_car < 7.))
+			  { 
 				  ref_vel -= .224;
-			  if ((changing_lane == false) && (ref_vel > 10.) && (traveled_in_lane> 250.))
+			  }
+
+			  // consider the change lane if 
+			  // 1 - car is NOT already changing lane
+			  // 2 - its speed is 25 mph 
+			  // 3 - Car is already travled more than 250 m in its current lane
+			  if ((changing_lane == false) && (ref_vel > 25.) && (traveled_in_lane> 250.))
 			  {
-				  if ((min_gap_right_lane > thershold_lane_change) && (time_rear_right_hit_me > time_change_lane)){
+
+				  // check if left lane is clear
+				  if ((min_distance2_right_lane > thershold_lane_change) && (time_rear_right_hit_me > time_change_lane)){
 					  right_lane_clear = true;
 				  }
-				  if ((min_gap_left_lane > thershold_lane_change) && (time_rear_left_hit_me > time_change_lane)) {
+
+				  // check if right lane is clear
+				  if ((min_distance2_left_lane > thershold_lane_change) && (time_rear_left_hit_me > time_change_lane)) {
 					  left_lane_clear = true;
 				  }
-
+				  // check if both lane clear
 				  if (right_lane_clear && left_lane_clear) {
-
-					  if (min_gap_right_lane < min_gap_left_lane) {
-						  if (my_lane_speed < left_lane_speed) {
+					  // choose lane with bigger gap
+					  if (distance2_right_lane_front_car < distance2_left_lane_front_car) {
+						  // check if speed matches for left or right lane change
+						  if (turn_left_speed_match) {
 							  go_left = true;
-						  }else if (my_lane_speed < right_lane_speed) {
+						  }else if (turn_right_speed_match) {
 							  go_right = true;
 						  }
 					  }
 					  else {
-						  if (my_lane_speed < right_lane_speed) {
+						  // check if speed matches for right lane change
+						  if (turn_right_speed_match) {
 							  go_right = true;
 						  }
 					  }
 
 				  }
 				  else {
+					  // check if left lane is clear
 					  if (left_lane_clear) {
-						  if (my_lane_speed < left_lane_speed) {
+						  if (turn_left_speed_match) {
 							  go_left = true;
 						  }
 					  }
+					  // check if right lane is clear
 					  if (right_lane_clear) {
-						  if (my_lane_speed < right_lane_speed) {
+						  if (turn_right_speed_match) {
 							  go_right = true;
 						  }
 					  }
@@ -280,26 +326,27 @@ int main() {
 
 		  }
 		  else if (ref_vel<49.5){
-			  ref_vel += .224;
+			  ref_vel += .224/1.5;
 		  } 
 
-		  //std::cout << "min gap right  is " << min_gap_right_lane << std::endl;
-		  // std::cout << "min gap left is " << min_gap_left_lane << std::endl;
+		  //std::cout << "min gap right  is " << min_distance2_right_lane << std::endl;
+		  // std::cout << "min gap left is " << min_distance2_left_lane << std::endl;
 		  if (go_right)
 		  {
-			  std::cout << "going right is clear. min gap right  is " << min_gap_right_lane << std::endl;
-			  std::cout << "traveled_in_lane  is " << traveled_in_lane << std::endl;
+			  std::cout << "----------------------------------------------------------" << std::endl;
+			  std::cout << "Changing Right Lane. Min dist. to Right-lane Car:"  << min_distance2_right_lane << std::endl;
+			  std::cout << "Travelled distance in the current lane was :" << traveled_in_lane << std::endl;
 
 		  }
 		  if (go_left)
 		  {
-			  std::cout << "going left is clear. min gap left is " << min_gap_left_lane << std::endl;
-			  std::cout << "traveled_in_lane  is " << traveled_in_lane << std::endl;
+			  std::cout << "----------------------------------------------------------" << std::endl;
+			  std::cout << "Changing Left Lane. Min dist. to Left-lane Car:" << min_distance2_left_lane << std::endl;
+			  std::cout << "Travelled distance in the current lane was " << traveled_in_lane << std::endl;
 
 		  }
 
 
-			  
 		  vector<double> ptsx;
 		  vector<double> ptsy;
 
@@ -332,13 +379,22 @@ int main() {
 			  ptsy.push_back(ref_y_prev);
 			  ptsy.push_back(ref_y);
 		  }
+		  vector<double> next_wp0;
+		  vector<double> next_wp1;
+		  vector<double> next_wp2;
 	
-
-	
-		  vector<double> next_wp0 = getXY(car_s + 30., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-		  vector<double> next_wp1 = getXY(car_s + 60., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-		  vector<double> next_wp2 = getXY(car_s + 90., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-		  
+		  // use shorter anchor for keeping the lane
+		  if (next_lane == lane){
+			  next_wp0 = getXY(car_s + 20., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			  next_wp1 = getXY(car_s + 40., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			  next_wp2 = getXY(car_s + 100., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  }else{
+			  // use longer anchor for changing the lane
+			  next_wp0 = getXY(car_s + 40., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			  next_wp1 = getXY(car_s + 60., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+			  next_wp2 = getXY(car_s + 120., (2 + 4 * next_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  }
+			  
 		  ptsx.push_back(next_wp0[0]);
 		  ptsx.push_back(next_wp1[0]);
 		  ptsx.push_back(next_wp2[0]);
@@ -357,19 +413,12 @@ int main() {
 		  }
 	
 
-		 // std::cout << "ptsx size is " << ptsx.size() << std::endl;
-		 // std::cout << "ptsy size is " << ptsy.size() << std::endl;
 
 
 		  tk::spline s;
 		  s.set_points(ptsx, ptsy);
 
 
-
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
 		  vector<double> next_x_vals;
 		  vector<double> next_y_vals;
 
@@ -381,14 +430,13 @@ int main() {
 		  }
 		 
 
-		  double target_x = 30.;
+		  double target_x = 40.;
 		  double target_y = s(target_x);
 		  double target_dist = sqrt((target_x * target_x) + (target_y * target_y));
 
 		  double x_add_on = 0;
 		  double N = (target_dist / (0.02*ref_vel / 2.24));
 		  
-		//  std::cout << "current path size  is " << 50 - previous_path_x.size() << std::endl;
 
 		  for (int i = 1; i < 50 - previous_path_x.size(); i++) {
 
@@ -410,21 +458,7 @@ int main() {
 		  }
 
 		  int sz = next_x_vals.size();
-		 // std::cout << "car next_x_vals size is :" << sz << std::endl;
 
-
-		  /*
-
-		  std::cout << "car xval is :" << car_x << std::endl;
-		  std::cout << "car yval is :" << car_y << std::endl;
-
-		  std::cout << "first xval is :" << next_x_vals[0] << std::endl;
-		  std::cout << "final yval is :" << next_y_vals[0] << std::endl;
-
-		  std::cout << "final xval is :" << next_x_vals[sz-1] << std::endl;
-		  std::cout << "final yval is :" << next_y_vals[sz-1] << std::endl;
-
-		  */
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
