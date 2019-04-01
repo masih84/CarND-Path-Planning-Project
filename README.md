@@ -8,6 +8,34 @@ To run the simulator on Mac/Linux, first make the binary file executable with th
 ```shell
 sudo chmod u+x {simulator_file_name}
 ```
+### Model Documentation
+
+In this path planning, a logic was developed to use information from other cars measured information to decide the require bahaviour and execute the path using spline.  The path-planing logic is the part that decides if the car should maintain its lane or change it to the let or right. 
+
+#### Defult Behaviur
+By defult, the car maintains its lane and travles with constant speed of 49.5 mph. This means in the case of empty high-way, car will drive with max speed without changing lane.
+
+#### Measurments to other cars
+To decide if the car should mantain its lane or change the lane, it needs to know its distnce to nearby cars in the same lane or other lanes. This is devloped in lines from 160 to 220. It goes through all sensor fusion information and calculate the followings:
+* Distance to the closest car in the front of our car in the same lane 
+* Speed of the closest car in the front of our car in the same lane  
+* Distance to the colosest car in the front of our car in right and left lane 
+* Distance to the colosest car in the rear of our car in right and left lane 
+* Speed of the closest car in the front of our car in right and left lane 
+* Speed of the closest car in the rear of our car in right and left lane 
+
+
+#### Speed control
+To avoid collision ite front car in the same lane, car will scan up to 40[m] in front of it, and if there is any car moving slower, "too_close" status was set to true in line 172. when there is anther car too close to our car in the same lane, we reduce the speed of the car in line 263. Othewise, we increase the speed of the car in line 329. 
+
+#### Matching Speed for Changing lane
+In the case that there is another car too close to our car in the same lane, the logic checks if changing lane to left or right is possible. The first check is to check  matching speed for changing lane. Matching speed is valid if our car speed is faster than the rear car but slower than the car in front in the other lane. Obviously, these checks become less important whe there is eoungh distance between our car and other cars in te other lane. The deatils of these conditions are specfied in lines  244 to 258.
+
+#### Check clearence or changing lane
+The other condition for changing lane is if our car has enough distance and time to change the lane. The threshold to change the lane set to 12 [m]. In this case, logic check if the car distancd to the closest cae in the front or raer is great than 12[m]. In addition to distance, In the logic, I check if there is enough time for changing the lane. The car change lane is calculated by assuming it takes 4 [m] to change lane divided by speed plus 2 [sec] for acceelration decelation part. Also, the time the rear car in other lane needs to reach our car is simply calclated by dividing the gap between our car and the rear car by the rear car's speed. Clearance checks for changing lane is coded in lines in 274 to 281. 
+
+#### Rules to go to the right or left lane
+In the case that our car is in the middle lane, the logic should decide if chnage lane to the left or right. 
 
 ### Goals
 In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 10 m/s^3.
